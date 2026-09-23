@@ -1,0 +1,29 @@
+# compiled output
+/dist
+/node_modules
+/build
+
+# logs
+/logs
+
+# development mail drops (contain live invitation tokens)
+/storage
+*.log
+npm-debug.log*
+
+# tests
+/coverage
+/.nyc_output
+
+# env
+.env
+.env.local
+.env.*.local
+
+# IDE
+/.idea
+/.vscode
+*.swp
+
+# OS
+.DS_Store

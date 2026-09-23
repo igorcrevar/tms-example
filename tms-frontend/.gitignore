@@ -1,0 +1,29 @@
+# build output
+dist
+dist-ssr
+/node_modules
+
+# logs
+*.log
+npm-debug.log*
+
+# tests
+/coverage
+/playwright-report
+/test-results
+/blob-report
+/playwright/.cache
+
+# env
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# OS
+.DS_Store

@@ -1,0 +1,23 @@
+# Igor's scratch file: prompts and notes he sends from the editor, not project content.
+komande.txt
+
+# Secrets and generated credential-bearing files, wherever they appear.
+.env
+.env.local
+.env.*.local
+storage/
+
+# Build and dependency output, as a backstop to the per-project ignores.
+node_modules/
+dist/
+coverage/
+
+# Logs
+logs/
+*.log
+
+# OS and editor
+.DS_Store
+*.swp
+
+.vscode
