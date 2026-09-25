@@ -24,6 +24,7 @@ import { messageFor } from '../auth';
 import { AddDriverDialog } from '../components/AddDriverDialog';
 import { InviteUserDialog } from '../components/InviteUserDialog';
 import { SetPinDialog } from '../components/SetPinDialog';
+import type { SetPinTarget } from '../components/SetPinDialog';
 import {
   ROLE_NAMES,
   useDeleteUser,
@@ -45,7 +46,7 @@ export function UsersPage() {
   const [limit, setLimit] = useState(25);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [driverOpen, setDriverOpen] = useState(false);
-  const [pinTarget, setPinTarget] = useState<UserSummary | null>(null);
+  const [pinTarget, setPinTarget] = useState<SetPinTarget | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<UserSummary | null>(null);
   const [twoFactorTarget, setTwoFactorTarget] = useState<UserSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -176,7 +177,15 @@ export function UsersPage() {
                 <TableCell align="right">
                   <Stack direction="row" spacing={1} sx={{ justifyContent: 'flex-end' }}>
                     {user.driver && (
-                      <Button size="small" onClick={() => setPinTarget(user)}>
+                      <Button
+                        size="small"
+                        onClick={() =>
+                          setPinTarget({
+                            driverId: user.driver!.id,
+                            driverCode: user.driver!.driverCode,
+                          })
+                        }
+                      >
                         Change PIN
                       </Button>
                     )}
@@ -233,7 +242,7 @@ export function UsersPage() {
 
       <InviteUserDialog open={inviteOpen} onClose={() => setInviteOpen(false)} />
       <AddDriverDialog open={driverOpen} onClose={() => setDriverOpen(false)} />
-      <SetPinDialog user={pinTarget} onClose={() => setPinTarget(null)} />
+      <SetPinDialog driver={pinTarget} onClose={() => setPinTarget(null)} />
 
       <Dialog open={twoFactorTarget !== null} onClose={() => setTwoFactorTarget(null)}>
         <DialogTitle>Reset two-factor for {twoFactorTarget?.email}?</DialogTitle>

@@ -4,19 +4,22 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 import { PinPad } from '../components/PinPad';
-import { useDriverLogin } from '../auth';
+import { useDriverLogin, useForgotPin } from '../auth';
 
 const PIN_LENGTH = 6;
 
 export function PinLoginPage() {
   const navigate = useNavigate();
   const login = useDriverLogin();
+  const forgotPin = useForgotPin();
   const [driverCode, setDriverCode] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const submit = async () => {
     setError(null);
+    setNotice(null);
 
     try {
       await login.mutateAsync({ driverCode, pin });
@@ -27,6 +30,22 @@ export function PinLoginPage() {
         axios.isAxiosError(cause) && cause.response?.status === 429
           ? 'Too many attempts. Wait a minute and try again.'
           : 'That driver code and PIN did not match.',
+      );
+    }
+  };
+
+  const requestReset = async () => {
+    setError(null);
+    setNotice(null);
+
+    try {
+      await forgotPin.mutateAsync(driverCode);
+      setNotice('Your dispatcher has been notified and will give you a new PIN.');
+    } catch (cause) {
+      setError(
+        axios.isAxiosError(cause) && cause.response?.status === 429
+          ? 'Too many attempts. Wait a minute and try again.'
+          : 'Could not send the request. Try again.',
       );
     }
   };
@@ -52,6 +71,11 @@ export function PinLoginPage() {
               {error}
             </Alert>
           )}
+          {notice && (
+            <Alert severity="success" sx={{ mb: 2 }} role="status">
+              {notice}
+            </Alert>
+          )}
 
           <Stack spacing={3}>
             <TextField
@@ -74,9 +98,14 @@ export function PinLoginPage() {
               Sign in
             </Button>
 
-            <Typography variant="body2" color="text.secondary" align="center">
-              Forgotten your PIN? Ask your dispatcher to set a new one.
-            </Typography>
+            <Button
+              variant="text"
+              onClick={() => void requestReset()}
+              disabled={forgotPin.isPending || driverCode.length === 0}
+              fullWidth
+            >
+              Forgotten your PIN?
+            </Button>
           </Stack>
         </CardContent>
       </Card>

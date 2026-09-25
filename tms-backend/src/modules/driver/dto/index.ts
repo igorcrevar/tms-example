@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsEmail,
   IsEnum,
+  IsNotEmpty,
   IsOptional,
   IsString,
   Matches,
@@ -57,4 +58,12 @@ export class SetDriverPinDto {
   @IsString()
   @Matches(/^\d{6}$/, { message: 'pin must be six digits' })
   pin!: string;
+}
+
+export class ForgotPinDto {
+  @ApiProperty({ example: 'DRV-0001' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(32)
+  driverCode!: string;
 }

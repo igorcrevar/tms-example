@@ -127,6 +127,10 @@ class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
+  MFA_ENROLMENT_TTL?: string;
+
+  @IsString()
+  @IsOptional()
   AUTH_COOKIE_DOMAIN?: string;
 
   @IsBooleanString()
@@ -278,6 +282,7 @@ export class AppConfig {
     readonly staff: AudienceSecrets;
     readonly driver: AudienceSecrets;
     readonly mfaChallengeTtl: number;
+    readonly mfaEnrolmentTtl: number;
     readonly cookieDomain: string | undefined;
     readonly cookieSecure: boolean;
     readonly cookieSameSite: CookieSameSite;
@@ -367,6 +372,7 @@ export class AppConfig {
         refreshTtl: durationToSeconds(env.JWT_DRIVER_REFRESH_TTL ?? '30d', 2592000),
       },
       mfaChallengeTtl: durationToSeconds(env.MFA_CHALLENGE_TTL ?? '5m', 300),
+      mfaEnrolmentTtl: durationToSeconds(env.MFA_ENROLMENT_TTL ?? '15m', 900),
       cookieDomain: env.AUTH_COOKIE_DOMAIN || undefined,
       cookieSecure: env.AUTH_COOKIE_SECURE !== 'false',
       cookieSameSite: env.AUTH_COOKIE_SAMESITE ?? 'strict',

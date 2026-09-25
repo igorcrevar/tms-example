@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, IsNull, Repository } from 'typeorm';
 
 import { TokenAudience } from '../auth/entities/refresh-token.entity';
 import { PasswordService } from '../auth/services/password.service';
@@ -10,6 +10,16 @@ import { User, UserStatus } from '../user/entities/user.entity';
 import { UserSummary, toUserSummary } from '../user/user.mapper';
 import { CreateDriverDto } from './dto';
 import { Driver } from './entities/driver.entity';
+import { PinResetRequest } from './entities/pin-reset-request.entity';
+
+export interface PinResetRequestSummary {
+  id: string;
+  driverId: string;
+  driverCode: string;
+  firstName: string;
+  lastName: string;
+  requestedAt: string;
+}
 
 @Injectable()
 export class DriverService {
@@ -17,6 +27,7 @@ export class DriverService {
 
   constructor(
     @InjectRepository(Driver) private readonly drivers: Repository<Driver>,
+    @InjectRepository(PinResetRequest) private readonly pinResets: Repository<PinResetRequest>,
     @InjectRepository(User) private readonly users: Repository<User>,
     @InjectRepository(Role) private readonly roles: Repository<Role>,
     private readonly passwords: PasswordService,
@@ -108,6 +119,60 @@ export class DriverService {
       await manager.update(User, driver.userId, { failedLoginAttempts: 0, lockedUntil: null });
 
       await this.tokens.revokeAllForUser(driver.userId, TokenAudience.Driver, manager);
+
+      const resolved = await manager.update(
+        PinResetRequest,
+        { driverId: driver.id, resolvedAt: IsNull() },
+        { resolvedAt: new Date(), resolvedById: actorId },
+      );
+
+      this.logger.log(
+        `Resolved ${resolved.affected ?? 0} PIN reset request(s) for driver ${driver.id}`,
+      );
     });
+  }
+
+  /**
+   * Every outcome is silent towards the caller, so an unknown code cannot be told
+   * apart from a known one; the reason is logged without the code itself.
+   */
+  async requestPinReset(driverCode: string): Promise<void> {
+    const driver = await this.drivers.findOne({
+      where: { driverCode: driverCode.trim() },
+      relations: { user: true },
+    });
+
+    if (!driver || driver.user.status !== UserStatus.Active) {
+      this.logger.warn('Ignoring PIN reset request: no active driver matches that code');
+      return;
+    }
+
+    if (await this.pinResets.existsBy({ driverId: driver.id, resolvedAt: IsNull() })) {
+      this.logger.log(`Ignoring PIN reset request for driver ${driver.id}: one is already open`);
+      return;
+    }
+
+    this.logger.log(`Recording a PIN reset request for driver ${driver.id}`);
+
+    await this.pinResets.insert({ driverId: driver.id });
+  }
+
+  async listOpenPinResetRequests(): Promise<PinResetRequestSummary[]> {
+    const requests = await this.pinResets
+      .createQueryBuilder('request')
+      .innerJoinAndSelect('request.driver', 'driver')
+      .innerJoinAndSelect('driver.user', 'user')
+      .where('request.resolvedAt IS NULL')
+      .orderBy('request.createdAt', 'ASC')
+      .getMany();
+
+    return requests.map((request) => ({
+      id: request.id,
+      driverId: request.driverId,
+      driverCode: request.driver.driverCode,
+      firstName: request.driver.user.firstName,
+      lastName: request.driver.user.lastName,
+      requestedAt: request.createdAt.toISOString(),
+    }));
   }
 }

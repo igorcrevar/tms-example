@@ -1,12 +1,16 @@
-import { AppBar, Box, Button, Container, Toolbar, Typography } from '@mui/material';
+import { AppBar, Badge, Box, Button, Container, Toolbar, Typography } from '@mui/material';
 import { Link, Outlet, useNavigate } from 'react-router-dom';
 
 import { useLogout, useSession } from '../api';
+import { usePinResetRequests } from '../users';
 
 export function AdminLayout() {
   const navigate = useNavigate();
   const session = useSession();
   const logout = useLogout();
+  // A 403 means the caller cannot read drivers, so an error simply hides the link.
+  const pinRequests = usePinResetRequests();
+  const openRequests = pinRequests.data?.length ?? 0;
 
   const signOut = async () => {
     await logout.mutateAsync();
@@ -26,11 +30,21 @@ export function AdminLayout() {
           <Button color="inherit" component={Link} to="/admin/users" sx={{ flexGrow: 1, justifyContent: 'flex-start' }}>
             Users
           </Button>
+          {openRequests > 0 && (
+            <Badge badgeContent={openRequests} color="error">
+              <Button color="inherit" component={Link} to="/admin/pin-requests">
+                PIN requests
+              </Button>
+            </Badge>
+          )}
           {session.data && (
             <Typography variant="body2">
               {session.data.email} ({session.data.role})
             </Typography>
           )}
+          <Button color="inherit" component={Link} to="/admin/change-password">
+            Change password
+          </Button>
           <Button color="inherit" onClick={() => void signOut()} disabled={logout.isPending}>
             Sign out
           </Button>

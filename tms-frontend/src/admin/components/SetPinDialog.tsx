@@ -12,14 +12,18 @@ import {
 
 import { messageFor } from '../auth';
 import { useSetDriverPin } from '../users';
-import type { UserSummary } from '../users';
+
+export interface SetPinTarget {
+  driverId: string;
+  driverCode: string;
+}
 
 interface SetPinDialogProps {
-  user: UserSummary | null;
+  driver: SetPinTarget | null;
   onClose: () => void;
 }
 
-export function SetPinDialog({ user, onClose }: SetPinDialogProps) {
+export function SetPinDialog({ driver, onClose }: SetPinDialogProps) {
   const setPin = useSetDriverPin();
   const [pin, setPinValue] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -28,12 +32,12 @@ export function SetPinDialog({ user, onClose }: SetPinDialogProps) {
     event.preventDefault();
     setError(null);
 
-    if (!user?.driver) {
+    if (!driver) {
       return;
     }
 
     try {
-      await setPin.mutateAsync({ driverId: user.driver.id, pin });
+      await setPin.mutateAsync({ driverId: driver.driverId, pin });
       setPinValue('');
       onClose();
     } catch (cause) {
@@ -42,12 +46,16 @@ export function SetPinDialog({ user, onClose }: SetPinDialogProps) {
   };
 
   return (
-    <Dialog open={user !== null} onClose={onClose} fullWidth maxWidth="xs">
+    <Dialog open={driver !== null} onClose={onClose} fullWidth maxWidth="xs">
       <form onSubmit={submit} noValidate>
-        <DialogTitle>New PIN for {user?.driver?.driverCode}</DialogTitle>
+        <DialogTitle>New PIN for {driver?.driverCode}</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
-            {error && <Alert severity="error" role="alert">{error}</Alert>}
+            {error && (
+              <Alert severity="error" role="alert">
+                {error}
+              </Alert>
+            )}
             <TextField
               label="New PIN"
               type="password"

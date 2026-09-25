@@ -75,3 +75,17 @@ export class ResetPasswordDto {
   @MaxLength(256)
   password!: string;
 }
+
+export class ChangePasswordDto {
+  @ApiProperty({ example: 'correct horse battery staple' })
+  @IsString()
+  @MinLength(MIN_PASSWORD_LENGTH)
+  @MaxLength(256)
+  currentPassword!: string;
+
+  @ApiProperty({ example: 'staple battery horse correct' })
+  @IsString()
+  @MinLength(MIN_PASSWORD_LENGTH)
+  @MaxLength(256)
+  newPassword!: string;
+}

@@ -182,11 +182,14 @@ export class TokenService {
   }
 
   createMfaChallenge(userId: string, enrolmentRequired: boolean): Promise<string> {
+    const expiresIn = enrolmentRequired
+      ? this.config.auth.mfaEnrolmentTtl
+      : this.config.auth.mfaChallengeTtl;
     return this.jwt.signAsync(
       { sub: userId, typ: TokenType.MfaChallenge, enrol: enrolmentRequired },
       {
         secret: this.mfaSecret(),
-        expiresIn: this.config.auth.mfaChallengeTtl,
+        expiresIn,
         audience: TokenAudience.Staff,
       },
     );

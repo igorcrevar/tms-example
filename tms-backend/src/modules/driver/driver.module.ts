@@ -7,9 +7,10 @@ import { User } from '../user/entities/user.entity';
 import { DriverController } from './driver.controller';
 import { DriverService } from './driver.service';
 import { Driver } from './entities/driver.entity';
+import { PinResetRequest } from './entities/pin-reset-request.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Driver, User, Role]), AuthModule],
+  imports: [TypeOrmModule.forFeature([Driver, PinResetRequest, User, Role]), AuthModule],
   controllers: [DriverController],
   providers: [DriverService],
   exports: [TypeOrmModule, DriverService],

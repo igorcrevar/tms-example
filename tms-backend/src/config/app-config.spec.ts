@@ -9,12 +9,15 @@ describe('AppConfig', () => {
       JWT_STAFF_ACCESS_TTL: '15m',
       AUTH_COOKIE_SECURE: 'false',
       AUTH_MAX_FAILED_ATTEMPTS: '3',
+      MFA_ENROLMENT_TTL: '20m',
     });
 
     expect(config.app.port).toBe(4000);
     expect(config.app.corsOrigins).toEqual(['http://a.local', 'http://b.local']);
     expect(config.auth.staff.accessTtl).toBe(900);
     expect(config.auth.driver.refreshTtl).toBe(2592000);
+    expect(config.auth.mfaChallengeTtl).toBe(300);
+    expect(config.auth.mfaEnrolmentTtl).toBe(1200);
     expect(config.auth.cookieSecure).toBe(false);
     expect(config.auth.cookieDomain).toBeUndefined();
     expect(config.auth.maxFailedAttempts).toBe(3);

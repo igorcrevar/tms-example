@@ -47,6 +47,7 @@ describe('StaffAuthService', () => {
     issueSession: jest.Mock;
     consumeRefreshToken: jest.Mock;
     revokeFamily: jest.Mock;
+    revokeAllForUser: jest.Mock;
   };
   let manager: { update: jest.Mock; findOne: jest.Mock; getRepository: jest.Mock };
   let dataSource: { transaction: jest.Mock };
@@ -68,6 +69,7 @@ describe('StaffAuthService', () => {
       issueSession: jest.fn().mockResolvedValue({ accessToken: 'a', refreshToken: 'r' }),
       consumeRefreshToken: jest.fn(),
       revokeFamily: jest.fn().mockResolvedValue(undefined),
+      revokeAllForUser: jest.fn().mockResolvedValue(undefined),
     };
   });
 
@@ -249,6 +251,47 @@ describe('StaffAuthService', () => {
         failedLoginAttempts: 3,
         lockedUntil: expect.any(Date) as Date,
       });
+    });
+  });
+
+  describe('changePassword', () => {
+    it('stores the new hash and revokes every staff session in one transaction', async () => {
+      const { service } = buildService(activeUser());
+
+      await service.changePassword('user-1', PASSWORD, 'a brand new passphrase');
+
+      expect(manager.update).toHaveBeenCalledWith(
+        User,
+        'user-1',
+        expect.objectContaining({
+          passwordHash: expect.any(String) as string,
+          failedLoginAttempts: 0,
+          lockedUntil: null,
+        }),
+      );
+      expect(tokens.revokeAllForUser).toHaveBeenCalledWith('user-1', TokenAudience.Staff, manager);
+    });
+
+    it('rejects a wrong current password with the login message and writes nothing', async () => {
+      const { service } = buildService(activeUser());
+
+      const error = await service
+        .changePassword('user-1', 'not the password', 'a brand new passphrase')
+        .catch((e: Error) => e);
+
+      expect(error).toBeInstanceOf(UnauthorizedException);
+      expect((error as Error).message).toBe('Invalid credentials');
+      expect(manager.update).not.toHaveBeenCalled();
+      expect(tokens.revokeAllForUser).not.toHaveBeenCalled();
+    });
+
+    it('refuses a PIN role even with the correct password', async () => {
+      const { service } = buildService(activeUser({ role: { pinLogin: true } as User['role'] }));
+
+      await expect(
+        service.changePassword('user-1', PASSWORD, 'a brand new passphrase'),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(manager.update).not.toHaveBeenCalled();
     });
   });
 });

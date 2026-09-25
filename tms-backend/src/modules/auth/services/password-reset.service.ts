@@ -47,13 +47,6 @@ export class PasswordResetService {
       return;
     }
 
-    // Without a second factor the emailed link would be the whole authentication,
-    // so these accounts recover through an admin instead.
-    if (!user.totpEnabledAt) {
-      this.logger.warn(`Skipping reset email: account ${user.id} has no second factor`);
-      return;
-    }
-
     this.logger.log(`Issuing a password reset for user ${user.id}`);
 
     const token = randomBytes(32).toString('base64url');
@@ -141,11 +134,7 @@ export class PasswordResetService {
       throw new NotFoundException(INVALID_TOKEN);
     }
 
-    if (
-      reset.user.status !== UserStatus.Active ||
-      reset.user.role?.pinLogin ||
-      !reset.user.totpEnabledAt
-    ) {
+    if (reset.user.status !== UserStatus.Active || reset.user.role?.pinLogin) {
       throw new NotFoundException(INVALID_TOKEN);
     }
 

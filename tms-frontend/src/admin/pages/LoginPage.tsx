@@ -10,15 +10,21 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { Link as RouterLink, useNavigate } from 'react-router-dom';
+import { Link as RouterLink, useLocation, useNavigate } from 'react-router-dom';
 
 import type { TotpEnrolment } from '@/shared/auth/types';
 import { messageFor, useStaffLogin, useTotpEnrolment, useTotpVerify } from '../auth';
 
 type Step = 'credentials' | 'code';
 
+const CHALLENGE_EXPIRED = 'Two-factor challenge expired';
+
 export function LoginPage() {
   const navigate = useNavigate();
+  // A page that signs the user out on purpose says why here, so the redirect is not a surprise.
+  const [notice, setNotice] = useState<string | null>(
+    (useLocation().state as { message?: string } | null)?.message ?? null,
+  );
   const [step, setStep] = useState<Step>('credentials');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -30,8 +36,22 @@ export function LoginPage() {
   const enrol = useTotpEnrolment();
   const verify = useTotpVerify();
 
+  const fail = (cause: unknown, fallback: string) => {
+    // The challenge cookie is gone, so the only way forward is the password again.
+    if (messageFor(cause, '') === CHALLENGE_EXPIRED) {
+      setStep('credentials');
+      setCode('');
+      setEnrolment(null);
+      setNotice('Your sign-in timed out. Enter your password again.');
+      return;
+    }
+
+    setError(messageFor(cause, fallback));
+  };
+
   const submitCredentials = async (event: React.FormEvent) => {
     event.preventDefault();
+    setNotice(null);
     setError(null);
 
     try {
@@ -44,7 +64,7 @@ export function LoginPage() {
       setPassword('');
       setStep('code');
     } catch (cause) {
-      setError(messageFor(cause, 'Invalid credentials'));
+      fail(cause, 'Invalid credentials');
     }
   };
 
@@ -57,7 +77,7 @@ export function LoginPage() {
       await navigate('/admin', { replace: true });
     } catch (cause) {
       setCode('');
-      setError(messageFor(cause, 'Invalid verification code'));
+      fail(cause, 'Invalid verification code');
     }
   };
 
@@ -68,6 +88,12 @@ export function LoginPage() {
           <Typography variant="h5" component="h1" gutterBottom>
             TMS Admin
           </Typography>
+
+          {notice && !error && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              {notice}
+            </Alert>
+          )}
 
           {error && (
             <Alert severity="error" sx={{ mb: 2 }} role="alert">

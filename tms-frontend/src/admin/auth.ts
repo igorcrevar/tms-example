@@ -81,3 +81,21 @@ export function useResetPassword(): UseMutationResult<
     },
   });
 }
+
+/** The server revokes every session, the caller's included, so the cached profile goes too. */
+export function useChangePassword(): UseMutationResult<
+  void,
+  Error,
+  { currentPassword: string; newPassword: string }
+> {
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error, { currentPassword: string; newPassword: string }>({
+    mutationFn: async (input) => {
+      await adminApi.post('/auth/change-password', input);
+    },
+    onSuccess: () => {
+      queryClient.setQueryData(sessionKey, null);
+    },
+  });
+}

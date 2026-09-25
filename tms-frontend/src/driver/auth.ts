@@ -23,3 +23,11 @@ export function useDriverLogin(): UseMutationResult<DriverProfile, Error, PinCre
     },
   });
 }
+
+export function useForgotPin(): UseMutationResult<void, Error, string> {
+  return useMutation<void, Error, string>({
+    mutationFn: async (driverCode) => {
+      await driverApi.post('/auth/forgot-pin', { driverCode });
+    },
+  });
+}

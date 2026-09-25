@@ -13,18 +13,23 @@ import {
   createTestApp,
   deleteUsersByEmail,
   setCookieFor,
+  signInStaff,
 } from './helpers';
 
 const PASSWORD = 'correct horse battery staple';
+const NEW_PASSWORD = 'staple battery horse correct';
 const ENROLLED = 'e2e-staff-enrolled@tms.local';
 const PENDING = 'e2e-staff-pending@tms.local';
 const INVITED = 'e2e-staff-invited@tms.local';
-const EMAILS = [ENROLLED, PENDING, INVITED];
+/** Its own account: the password change below must not break the sign-ins above. */
+const CHANGER = 'e2e-staff-changer@tms.local';
+const EMAILS = [ENROLLED, PENDING, INVITED, CHANGER];
 
 describe('Staff authentication (e2e)', () => {
   let app: INestApplication<App>;
   let dataSource: DataSource;
   let totpSecret: string;
+  let changerSecret: string;
 
   beforeAll(async () => {
     ({ app, dataSource } = await createTestApp());
@@ -32,7 +37,13 @@ describe('Staff authentication (e2e)', () => {
     await deleteUsersByEmail(dataSource, EMAILS);
 
     totpSecret = authenticator.generateSecret();
+    changerSecret = authenticator.generateSecret();
     await createStaffUser(dataSource, { email: ENROLLED, password: PASSWORD, totpSecret });
+    await createStaffUser(dataSource, {
+      email: CHANGER,
+      password: PASSWORD,
+      totpSecret: changerSecret,
+    });
     await createStaffUser(dataSource, { email: PENDING, password: PASSWORD });
     await createStaffUser(dataSource, {
       email: INVITED,
@@ -259,6 +270,83 @@ describe('Staff authentication (e2e)', () => {
         )
         .set('x-csrf-token', 'x')
         .expect(401);
+    });
+  });
+
+  describe('change password', () => {
+    it('refuses an unauthenticated caller', async () => {
+      await request(app.getHttpServer())
+        .post('/api/staff/auth/change-password')
+        .send({ currentPassword: PASSWORD, newPassword: NEW_PASSWORD })
+        .expect(401);
+    });
+
+    it('refuses a request without the CSRF header', async () => {
+      const jar = await signInStaff(app, {
+        email: CHANGER,
+        password: PASSWORD,
+        totpSecret: changerSecret,
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/staff/auth/change-password')
+        .set('Cookie', jar.header())
+        .send({ currentPassword: PASSWORD, newPassword: NEW_PASSWORD })
+        .expect(403);
+    });
+
+    it('rejects a wrong current password with the login message', async () => {
+      const jar = await signInStaff(app, {
+        email: CHANGER,
+        password: PASSWORD,
+        totpSecret: changerSecret,
+      });
+
+      const response = await request(app.getHttpServer())
+        .post('/api/staff/auth/change-password')
+        .set('Cookie', jar.header())
+        .set('x-csrf-token', jar.get(AuthCookie.StaffCsrf) ?? '')
+        .send({ currentPassword: 'wrong password here', newPassword: NEW_PASSWORD })
+        .expect(401);
+
+      expect(bodyOf<{ message: string }>(response).message).toBe('Invalid credentials');
+    });
+
+    it('changes the password, ends the session and retires the old password', async () => {
+      const jar = await signInStaff(app, {
+        email: CHANGER,
+        password: PASSWORD,
+        totpSecret: changerSecret,
+      });
+      const refreshBefore = jar.get(AuthCookie.StaffRefresh);
+
+      const response = jar.capture(
+        await request(app.getHttpServer())
+          .post('/api/staff/auth/change-password')
+          .set('Cookie', jar.header())
+          .set('x-csrf-token', jar.get(AuthCookie.StaffCsrf) ?? '')
+          .send({ currentPassword: PASSWORD, newPassword: NEW_PASSWORD })
+          .expect(204),
+      );
+
+      expect(setCookieFor(response, AuthCookie.StaffAccess)).toMatch(/Expires=Thu, 01 Jan 1970/);
+      expect(jar.has(AuthCookie.StaffRefresh)).toBe(false);
+
+      await request(app.getHttpServer())
+        .post('/api/staff/auth/refresh')
+        .set('Cookie', `${AuthCookie.StaffRefresh}=${refreshBefore}; ${AuthCookie.StaffCsrf}=x`)
+        .set('x-csrf-token', 'x')
+        .expect(401);
+
+      await request(app.getHttpServer())
+        .post('/api/staff/auth/login')
+        .send({ email: CHANGER, password: PASSWORD })
+        .expect(401);
+
+      await request(app.getHttpServer())
+        .post('/api/staff/auth/login')
+        .send({ email: CHANGER, password: NEW_PASSWORD })
+        .expect(200);
     });
   });
 });

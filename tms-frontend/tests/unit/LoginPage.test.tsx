@@ -110,4 +110,31 @@ describe('Admin LoginPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Invalid verification code');
     expect(codeField).toHaveValue('');
   });
+
+  it('returns to the password step when the challenge has expired', async () => {
+    post
+      .mockResolvedValueOnce({ data: { mfaRequired: true, enrolmentRequired: false } })
+      .mockRejectedValueOnce(
+        Object.assign(new Error('Request failed'), {
+          isAxiosError: true,
+          response: { status: 401, data: { message: 'Two-factor challenge expired' } },
+        }),
+      );
+    const user = userEvent.setup();
+
+    renderPage(<LoginPage />);
+
+    await user.type(screen.getByLabelText(/email/i), 'admin@tms.local');
+    await user.type(screen.getByLabelText(/password/i), 'correct horse battery staple');
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+
+    await user.type(await screen.findByLabelText(/authentication code/i), '000000');
+    await user.click(screen.getByRole('button', { name: /verify/i }));
+
+    expect(
+      await screen.findByText('Your sign-in timed out. Enter your password again.'),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/password/i)).toHaveValue('');
+    expect(screen.queryByLabelText(/authentication code/i)).not.toBeInTheDocument();
+  });
 });

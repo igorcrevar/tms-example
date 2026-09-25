@@ -71,7 +71,7 @@ describe('Password reset (e2e)', () => {
       });
     }
 
-    // No authenticator at all: the state an invitee or an admin-assisted account sits in.
+    // No authenticator at all: the state the seeded super admin sits in until first login.
     await createStaffUser(dataSource, { email: NO_FACTOR, password: PASSWORD });
 
     adminJar = await signInStaff(app, { email: ADMIN, password: PASSWORD, totpSecret: adminTotp });
@@ -220,33 +220,32 @@ describe('Password reset (e2e)', () => {
   });
 
   describe('an account with no second factor', () => {
-    it('answers identically to an unknown address and issues nothing', async () => {
-      const bare = await forgotPassword(NO_FACTOR).expect(204);
-      const unknown = await forgotPassword(UNKNOWN).expect(204);
+    it('gets the link and signs in with the new password into enrolment', async () => {
+      const seen = await mailboxSnapshot();
+      await forgotPassword(NO_FACTOR).expect(204);
+      const token = await readResetToken(NO_FACTOR, seen);
 
-      expect(bare.text).toBe(unknown.text);
-      expect(JSON.stringify(bare.body)).toBe(JSON.stringify(unknown.body));
+      await resetPassword(token, NEW_PASSWORD).expect(204);
 
-      const [user] = await dataSource.query<Array<{ id: string }>>(
-        'SELECT id FROM users WHERE email = $1',
-        [NO_FACTOR],
-      );
+      const login = await request(app.getHttpServer())
+        .post('/api/staff/auth/login')
+        .send({ email: NO_FACTOR, password: NEW_PASSWORD })
+        .expect(200);
 
-      expect(await tokenRowsFor(user.id)).toHaveLength(0);
+      expect(bodyOf<{ enrolmentRequired: boolean }>(login).enrolmentRequired).toBe(true);
     });
 
-    it('refuses a token issued before the factor was cleared', async () => {
+    it('accepts a token issued before the factor was cleared', async () => {
       const seen = await mailboxSnapshot();
       await forgotPassword(STRIPPED).expect(204);
       const token = await readResetToken(STRIPPED, seen);
 
-      // The window an admin opens by clearing a lost authenticator.
       await dataSource.query(
         'UPDATE users SET "totpSecret" = NULL, "totpEnabledAt" = NULL WHERE email = $1',
         [STRIPPED],
       );
 
-      await resetPassword(token, 'a password an attacker chose').expect(404);
+      await resetPassword(token, NEW_PASSWORD).expect(204);
     });
   });
 

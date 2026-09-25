@@ -229,4 +229,18 @@ describe('TokenService', () => {
       UnauthorizedException,
     );
   });
+
+  it('gives an enrolment challenge the longer TTL', async () => {
+    const jwt = new JwtService({});
+    const lifetimeOf = async (enrolmentRequired: boolean) => {
+      const token = await service.createMfaChallenge('user-1', enrolmentRequired);
+      const { iat, exp } = jwt.decode<{ iat: number; exp: number }>(token);
+
+      return exp - iat;
+    };
+
+    expect(await lifetimeOf(false)).toBe(config.auth.mfaChallengeTtl);
+    expect(await lifetimeOf(true)).toBe(config.auth.mfaEnrolmentTtl);
+    expect(config.auth.mfaEnrolmentTtl).toBeGreaterThan(config.auth.mfaChallengeTtl);
+  });
 });

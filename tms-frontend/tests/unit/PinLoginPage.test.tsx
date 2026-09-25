@@ -108,4 +108,48 @@ describe('Driver PinLoginPage', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Too many attempts');
   });
+
+  it('offers a PIN reset only once a driver code is entered', async () => {
+    const user = userEvent.setup();
+
+    renderPage(<PinLoginPage />);
+
+    const forgot = screen.getByRole('button', { name: /forgotten your pin/i });
+    expect(forgot).toBeDisabled();
+
+    await user.type(screen.getByLabelText(/driver code/i), 'DRV-0001');
+    expect(forgot).toBeEnabled();
+  });
+
+  it('asks for a PIN reset with the driver code and confirms it', async () => {
+    post.mockResolvedValueOnce({ data: undefined });
+    const user = userEvent.setup();
+
+    renderPage(<PinLoginPage />);
+
+    await user.type(screen.getByLabelText(/driver code/i), 'DRV-0001');
+    await user.click(screen.getByRole('button', { name: /forgotten your pin/i }));
+
+    expect(post).toHaveBeenCalledWith('/auth/forgot-pin', { driverCode: 'DRV-0001' });
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Your dispatcher has been notified',
+    );
+  });
+
+  it('explains a rate-limited PIN reset request', async () => {
+    post.mockRejectedValueOnce(
+      Object.assign(new Error('Request failed'), {
+        isAxiosError: true,
+        response: { status: 429, data: {} },
+      }),
+    );
+    const user = userEvent.setup();
+
+    renderPage(<PinLoginPage />);
+
+    await user.type(screen.getByLabelText(/driver code/i), 'DRV-0001');
+    await user.click(screen.getByRole('button', { name: /forgotten your pin/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Too many attempts');
+  });
 });

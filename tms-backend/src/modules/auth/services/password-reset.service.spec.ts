@@ -144,14 +144,13 @@ describe('PasswordResetService', () => {
       expect(mail.send).not.toHaveBeenCalled();
     });
 
-    it('sends nothing for an account with no second factor', async () => {
+    it('mails the link to an account with no second factor', async () => {
       const service = buildService({ user: activeStaff({ totpEnabledAt: null }) });
 
-      await expect(service.request(EMAIL)).resolves.toBeUndefined();
+      await service.request(EMAIL);
 
-      // The link would otherwise be the whole authentication for that account.
-      expect(mail.send).not.toHaveBeenCalled();
-      expect(authTokens.save).not.toHaveBeenCalled();
+      expect(authTokens.save).toHaveBeenCalledTimes(1);
+      expect(mail.send).toHaveBeenCalledTimes(1);
     });
 
     it('resolves when the mail transport fails, and logs why', async () => {
@@ -290,16 +289,15 @@ describe('PasswordResetService', () => {
       );
     });
 
-    it('refuses a token whose account has no second factor', async () => {
+    it('accepts a token whose account has no second factor', async () => {
       const service = buildService({
         token: storedToken({ user: activeStaff({ totpEnabledAt: null }) as User }),
       });
 
-      await expect(service.reset('raw-token', 'a brand new long password')).rejects.toThrow(
-        NotFoundException,
-      );
-      expect(claim.execute).not.toHaveBeenCalled();
-      expect(manager.update).not.toHaveBeenCalled();
+      await service.reset('raw-token', 'a brand new long password');
+
+      expect(manager.update).toHaveBeenCalledTimes(1);
+      expect(tokens.revokeAllForUser).toHaveBeenCalledWith('user-1', TokenAudience.Staff, manager);
     });
   });
 });

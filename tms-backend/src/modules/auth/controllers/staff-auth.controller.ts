@@ -18,7 +18,13 @@ import type { Request, Response } from 'express';
 
 import { AuthCookie } from '../auth.constants';
 import { CurrentUser } from '../decorators/current-user.decorator';
-import { ForgotPasswordDto, ResetPasswordDto, StaffLoginDto, TotpCodeDto } from '../dto';
+import {
+  ChangePasswordDto,
+  ForgotPasswordDto,
+  ResetPasswordDto,
+  StaffLoginDto,
+  TotpCodeDto,
+} from '../dto';
 import { TokenAudience } from '../entities/refresh-token.entity';
 import { CsrfGuard } from '../guards/csrf.guard';
 import { StaffJwtGuard } from '../guards/staff-jwt.guard';
@@ -129,6 +135,20 @@ export class StaffAuthController {
     await this.auth.logout(readCookie(req, AuthCookie.StaffRefresh));
     this.cookies.clearSession(res, TokenAudience.Staff);
     this.cookies.clearMfaChallenge(res);
+  }
+
+  /** Revokes every staff session, the caller's included, so the cookies are cleared with it. */
+  @Post('change-password')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(StaffJwtGuard, CsrfGuard)
+  @Throttle(AUTH_THROTTLE)
+  async changePassword(
+    @CurrentUser() principal: StaffPrincipal,
+    @Body() dto: ChangePasswordDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<void> {
+    await this.auth.changePassword(principal.userId, dto.currentPassword, dto.newPassword);
+    this.cookies.clearSession(res, TokenAudience.Staff);
   }
 
   @Get('me')

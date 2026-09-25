@@ -94,8 +94,40 @@ export function useResetTwoFactor() {
   return useUsersMutation<string>((id) => adminApi.delete(`/users/${id}/two-factor`));
 }
 
+export interface PinResetRequest {
+  id: string;
+  driverId: string;
+  driverCode: string;
+  firstName: string;
+  lastName: string;
+  requestedAt: string;
+}
+
+const pinResetRequestsKey = ['admin', 'pin-requests'];
+
+/** Polled, since a driver's request arrives with no push channel. */
+export function usePinResetRequests(): UseQueryResult<PinResetRequest[]> {
+  return useQuery<PinResetRequest[]>({
+    queryKey: pinResetRequestsKey,
+    queryFn: async () => {
+      const { data } = await adminApi.get<PinResetRequest[]>('/drivers/pin-reset-requests');
+
+      return data;
+    },
+    refetchInterval: 30_000,
+  });
+}
+
+/** A new PIN also resolves the driver's open reset request. */
 export function useSetDriverPin() {
-  return useUsersMutation<{ driverId: string; pin: string }>(({ driverId, pin }) =>
-    adminApi.put(`/drivers/${driverId}/pin`, { pin }),
-  );
+  const queryClient = useQueryClient();
+
+  return useMutation<unknown, Error, { driverId: string; pin: string }>({
+    mutationFn: ({ driverId, pin }) => adminApi.put(`/drivers/${driverId}/pin`, { pin }),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin', 'users'] }),
+        queryClient.invalidateQueries({ queryKey: pinResetRequestsKey }),
+      ]),
+  });
 }

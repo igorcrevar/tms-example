@@ -106,18 +106,25 @@ rather than an invitation's seven days. A reset revokes every staff refresh-toke
 that user, so no session can be renewed; an access token already issued keeps working until
 it expires, up to its ten-minute TTL.
 
-**A reset deliberately does not clear TOTP.** Email access alone must never be enough to
-take over an account. It follows that an account with no second factor gets no link at all —
-the mailbox would be the whole authentication — so `forgot-password` treats it exactly like
-an unknown address and an outstanding token stops working the moment the factor is cleared.
-Someone who has lost their authenticator instead needs an admin, who clears it with
-`DELETE /api/staff/users/:id/two-factor`; that revokes their sessions too, so the next
-sign-in goes through enrolment. An account still `INVITED` has never enrolled, so the reset
-is refused until the invitation is accepted.
+**A reset leaves TOTP untouched.** Email access alone must never bypass an enrolled second
+factor. An account without one gets the link like any other: its mailbox is already its
+recovery root, exactly as an invitation trusts it, and the next sign-in goes through
+enrolment as it would have anyway. Someone who has lost their authenticator still needs an
+admin, who clears it with `DELETE /api/staff/users/:id/two-factor`; that revokes their
+sessions too, so the next sign-in goes through enrolment. An account still `INVITED` has
+never enrolled, so the reset is refused until the invitation is accepted.
 
-Drivers have no such flow by design: they have no email login, so a forgotten PIN is
-handled out of band. The PIN screen points them at their dispatcher, who sets a new PIN
-with the existing `PUT /api/staff/drivers/:id/pin`.
+Drivers have no email, so a forgotten PIN is signalled in-app instead:
+`POST /api/driver/auth/forgot-pin` takes a driver code, answers 204 whatever the input, and
+records an open `pin_reset_requests` row (at most one per driver). Staff holding
+`read:Driver` see the open requests at `GET /api/staff/drivers/pin-reset-requests` and in the
+admin top bar, and setting a new PIN with `PUT /api/staff/drivers/:id/pin` resolves them in
+the same transaction.
+
+A signed-in staff member changes their own password at `POST /api/staff/auth/change-password`
+by presenting the current one; a mismatch answers with the login's uniform 401. Like a reset,
+it revokes every staff refresh-token family for the user — the caller's included, so the
+response clears the session cookies and the browser signs in again.
 
 ## 2. API isolation
 

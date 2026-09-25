@@ -4,10 +4,12 @@ import { Route, Routes } from 'react-router-dom';
 import { theme } from '@/shared/theme';
 import { ProtectedLayout } from './components/ProtectedLayout';
 import { AcceptInvitePage } from './pages/AcceptInvitePage';
+import { ChangePasswordPage } from './pages/ChangePasswordPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { LoginPage } from './pages/LoginPage';
 import { NotFoundPage } from './pages/NotFoundPage';
+import { PinResetRequestsPage } from './pages/PinResetRequestsPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { UsersPage } from './pages/UsersPage';
 
@@ -24,6 +26,8 @@ export default function AdminApp() {
         <Route element={<ProtectedLayout />}>
           <Route index element={<DashboardPage />} />
           <Route path="users" element={<UsersPage />} />
+          <Route path="pin-requests" element={<PinResetRequestsPage />} />
+          <Route path="change-password" element={<ChangePasswordPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

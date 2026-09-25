@@ -227,6 +227,40 @@ export class StaffAuthService {
     }
   }
 
+  /** Every session goes: a password change is how a user evicts whoever else holds one. */
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    const changed = await this.dataSource.transaction(async (manager) => {
+      const user = await this.findByIdWithSecrets(userId, manager);
+
+      if (!user?.passwordHash || user.role?.pinLogin || user.status !== UserStatus.Active) {
+        return false;
+      }
+
+      if (!(await this.passwords.verify(user.passwordHash, currentPassword))) {
+        return false;
+      }
+
+      this.logger.log(`Changing the password for user ${user.id}, revoking its staff sessions`);
+
+      await manager.update(User, user.id, {
+        passwordHash: await this.passwords.hash(newPassword),
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+      });
+      await this.tokens.revokeAllForUser(user.id, TokenAudience.Staff, manager);
+
+      return true;
+    });
+
+    if (!changed) {
+      throw new UnauthorizedException(INVALID_CREDENTIALS);
+    }
+  }
+
   findById(userId: string): Promise<User | null> {
     return this.users.findOne({ where: { id: userId } });
   }
@@ -250,6 +284,7 @@ export class StaffAuthService {
       .createQueryBuilder('user')
       .setLock('pessimistic_write', undefined, ['"user"'])
       .addSelect('user.totpSecret')
+      .addSelect('user.passwordHash')
       .leftJoinAndSelect('user.role', 'role')
       .where('user.id = :id', { id })
       .getOne();
