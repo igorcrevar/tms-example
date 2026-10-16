@@ -161,6 +161,7 @@ export class UserService {
     callerId: string,
   ): Promise<MassEmailResult> {
     const ids = [...new Set(input.userIds.map((id) => id.toLowerCase()))];
+    // Suspended users are deliberately included: email is how you tell them to contact billing.
     const recipients = await this.users.find({ where: { id: In(ids) } });
 
     if (recipients.length !== ids.length) {
@@ -171,21 +172,28 @@ export class UserService {
 
     const failed: Array<{ userId: string }> = [];
 
-    for (const recipient of recipients) {
-      const message = adminNoticeEmail({
-        firstName: recipient.firstName,
-        subject: input.subject,
-        body: input.body,
-      });
+    // Chunks of 5 keep up to 100 SMTP sends from running sequentially inside one request.
+    const chunkSize = 5;
 
-      try {
-        await this.mail.send({ to: recipient.email, ...message });
-      } catch (error) {
-        // The id and SMTP code are enough to follow up; the address never reaches a log.
-        const code = error instanceof Error && 'code' in error ? String(error.code) : 'unknown';
-        this.logger.warn(`Mass email to user ${recipient.id} failed (${code})`);
-        failed.push({ userId: recipient.id });
-      }
+    for (let start = 0; start < recipients.length; start += chunkSize) {
+      await Promise.all(
+        recipients.slice(start, start + chunkSize).map(async (recipient) => {
+          const message = adminNoticeEmail({
+            firstName: recipient.firstName,
+            subject: input.subject,
+            body: input.body,
+          });
+
+          try {
+            await this.mail.send({ to: recipient.email, ...message });
+          } catch (error) {
+            // The id and SMTP code are enough to follow up; the address never reaches a log.
+            const code = error instanceof Error && 'code' in error ? String(error.code) : 'unknown';
+            this.logger.warn(`Mass email to user ${recipient.id} failed (${code})`);
+            failed.push({ userId: recipient.id });
+          }
+        }),
+      );
     }
 
     this.logger.log(
