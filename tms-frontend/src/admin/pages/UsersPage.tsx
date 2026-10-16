@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
   Button,
@@ -58,6 +59,7 @@ export function UsersPage() {
   const [selected, setSelected] = useState<string[]>([]);
   const [massEmailOpen, setMassEmailOpen] = useState(false);
 
+  const queryClient = useQueryClient();
   const users = useUsers({ ...(filter === 'all' ? {} : { role: filter }), page, limit });
   const removeUser = useDeleteUser();
   const resetTwoFactor = useResetTwoFactor();
@@ -96,6 +98,12 @@ export function UsersPage() {
       setSelected([]);
       setNotice(`Email sent to ${result.sent} ${result.sent === 1 ? 'user' : 'users'}`);
     }
+  };
+
+  // The server named ids that no longer exist: drop them and refresh the stale rows away.
+  const onUnknownUsers = (unknownIds: string[]) => {
+    setSelected((current) => current.filter((id) => !unknownIds.includes(id)));
+    void queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
   };
 
   // A refused delete (403, or 400 for your own account) must say so rather than
@@ -313,6 +321,7 @@ export function UsersPage() {
         open={massEmailOpen}
         onClose={() => setMassEmailOpen(false)}
         onSent={onMassEmailSent}
+        onUnknownUsers={onUnknownUsers}
       />
 
       <Dialog open={twoFactorTarget !== null} onClose={() => setTwoFactorTarget(null)}>

@@ -125,11 +125,13 @@ describe('Mass email (e2e)', () => {
 
   it('rejects an unknown user id without sending anything', async () => {
     const seen = await mailboxSnapshot();
+    const missingId = randomUUID();
 
-    await post()
-      .send({ userIds: [targetOneId, randomUUID()], subject: 's', body: 'b' })
+    const response = await post()
+      .send({ userIds: [targetOneId, missingId], subject: 's', body: 'b' })
       .expect(400);
 
+    expect(bodyOf<{ unknownIds: string[] }>(response).unknownIds).toEqual([missingId]);
     await expect(waitForEml(TARGET_ONE, seen)).rejects.toThrow('No new message');
   }, 10_000);
 

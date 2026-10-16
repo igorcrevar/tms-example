@@ -196,12 +196,17 @@ describe('UserService', () => {
       const service = buildService([]);
       users.find.mockResolvedValue([alice]);
 
-      await expect(
-        service.sendMassEmail(
-          { userIds: ['id-alice', 'id-missing'], subject: 's', body: 'b' },
-          CALLER,
-        ),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      const failure = await service
+        .sendMassEmail({ userIds: ['id-alice', 'id-missing'], subject: 's', body: 'b' }, CALLER)
+        .then(
+          () => null,
+          (cause: unknown) => cause,
+        );
+
+      expect(failure).toBeInstanceOf(BadRequestException);
+      expect((failure as BadRequestException).getResponse()).toMatchObject({
+        unknownIds: ['id-missing'],
+      });
       expect(mail.send).not.toHaveBeenCalled();
     });
 
