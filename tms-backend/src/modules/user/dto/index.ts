@@ -1,11 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayNotEmpty,
+  IsArray,
   IsEmail,
   IsEnum,
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -92,4 +97,28 @@ export class InvitationTokenDto {
   @MinLength(1)
   @MaxLength(512)
   token!: string;
+}
+
+export class MassEmailDto {
+  @ApiProperty({ type: [String], maxItems: 100 })
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(100)
+  @IsUUID('all', { each: true })
+  userIds!: string[];
+
+  @ApiProperty({ example: 'Planned maintenance' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  @Matches(/\S/, { message: 'subject must not be blank' })
+  @Matches(/^[^\r\n]*$/, { message: 'subject must be a single line' })
+  subject!: string;
+
+  @ApiProperty()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(5000)
+  @Matches(/\S/, { message: 'body must not be blank' })
+  body!: string;
 }

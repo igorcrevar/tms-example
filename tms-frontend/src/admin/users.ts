@@ -131,3 +131,25 @@ export function useSetDriverPin() {
       ]),
   });
 }
+
+export interface MassEmailInput {
+  userIds: string[];
+  subject: string;
+  body: string;
+}
+
+export interface MassEmailResult {
+  sent: number;
+  failed: Array<{ userId: string }>;
+}
+
+/** No list invalidation: sending mail changes nothing the table shows. */
+export function useSendMassEmail(): UseMutationResult<MassEmailResult, Error, MassEmailInput> {
+  return useMutation<MassEmailResult, Error, MassEmailInput>({
+    mutationFn: async (input) => {
+      const { data } = await adminApi.post<MassEmailResult>('/users/mass-email', input);
+
+      return data;
+    },
+  });
+}
