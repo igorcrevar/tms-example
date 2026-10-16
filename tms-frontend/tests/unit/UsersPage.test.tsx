@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -332,6 +332,41 @@ describe('UsersPage', () => {
     expect(await screen.findByRole('button', { name: 'Email selected (1)' })).toBeEnabled();
     expect(screen.getByRole('checkbox', { name: 'Select driver@tms.local' })).not.toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Select staff@tms.local' })).toBeChecked();
+  });
+
+  it('closes the dialog and reports on the page when every selected user vanished', async () => {
+    post.mockRejectedValue(
+      Object.assign(new Error('Request failed'), {
+        isAxiosError: true,
+        response: {
+          status: 400,
+          data: {
+            message: 'One or more selected users no longer exist',
+            unknownIds: ['u1', 'u2'],
+          },
+        },
+      }),
+    );
+    const user = userEvent.setup();
+    renderPage(<UsersPage />);
+    await screen.findByText('staff@tms.local');
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select staff@tms.local' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select driver@tms.local' }));
+    await user.click(screen.getByRole('button', { name: 'Email selected (2)' }));
+    await user.type(screen.getByRole('textbox', { name: /subject/i }), 's');
+    await user.type(screen.getByRole('textbox', { name: /message/i }), 'b');
+    await user.click(screen.getByRole('button', { name: 'Send email' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(
+      '2 selected users no longer exist and were removed from your selection.',
+    );
+    expect(alert).not.toHaveTextContent('try again');
+    await waitFor(() =>
+      expect(screen.queryByText(/Email \d+ selected user/)).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole('button', { name: 'Email selected (0)' })).toBeDisabled();
   });
 
   it('selects every user on the page at once', async () => {

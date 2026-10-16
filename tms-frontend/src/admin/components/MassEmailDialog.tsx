@@ -20,7 +20,8 @@ interface MassEmailDialogProps {
   open: boolean;
   onClose: () => void;
   onSent: (result: MassEmailResult) => void;
-  onUnknownUsers: (unknownIds: string[]) => void;
+  /** Prunes vanished ids from the selection; returns whether anyone is still selected. */
+  onUnknownUsers: (unknownIds: string[]) => boolean;
 }
 
 /** Ids the server rejected because those users no longer exist; empty for any other error. */
@@ -65,12 +66,14 @@ export function MassEmailDialog({
       const unknownIds = unknownIdsIn(cause);
 
       if (unknownIds.length > 0) {
-        onUnknownUsers(unknownIds);
-        setError(
-          `${unknownIds.length} selected ${
-            unknownIds.length === 1 ? 'user no longer exists and was' : 'users no longer exist and were'
-          } removed from your selection — try again.`,
-        );
+        // An emptied selection closes the dialog, and the page shows the alert instead.
+        if (onUnknownUsers(unknownIds)) {
+          setError(
+            `${unknownIds.length} selected ${
+              unknownIds.length === 1 ? 'user no longer exists and was' : 'users no longer exist and were'
+            } removed from your selection — try again.`,
+          );
+        }
       } else {
         setError(messageFor(cause, 'Could not send the email'));
       }
