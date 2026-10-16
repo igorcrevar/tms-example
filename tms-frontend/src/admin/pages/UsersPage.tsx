@@ -101,9 +101,24 @@ export function UsersPage() {
   };
 
   // The server named ids that no longer exist: drop them and refresh the stale rows away.
-  const onUnknownUsers = (unknownIds: string[]) => {
-    setSelected((current) => current.filter((id) => !unknownIds.includes(id)));
+  const onUnknownUsers = (unknownIds: string[]): boolean => {
+    const remaining = selected.filter((id) => !unknownIds.includes(id));
+
+    setSelected(remaining);
     void queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+
+    // Nothing left to retry, so close the dialog and explain here instead.
+    if (remaining.length === 0) {
+      setMassEmailOpen(false);
+      setNotice(null);
+      setError(
+        `${unknownIds.length} selected ${
+          unknownIds.length === 1 ? 'user no longer exists and was' : 'users no longer exist and were'
+        } removed from your selection.`,
+      );
+    }
+
+    return remaining.length > 0;
   };
 
   // A refused delete (403, or 400 for your own account) must say so rather than
