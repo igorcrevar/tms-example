@@ -259,6 +259,13 @@ describe('UsersPage', () => {
     });
     expect(await screen.findByText('Email sent to 2 users')).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Email selected (0)' })).toBeDisabled();
+
+    // A full success clears the draft, so the next email starts blank.
+    await user.click(screen.getByRole('checkbox', { name: 'Select staff@tms.local' }));
+    await user.click(screen.getByRole('button', { name: 'Email selected (1)' }));
+
+    expect(await screen.findByRole('textbox', { name: /subject/i })).toHaveValue('');
+    expect(screen.getByRole('textbox', { name: /message/i })).toHaveValue('');
   });
 
   it('keeps the failed recipients selected and reports them', async () => {
@@ -283,6 +290,48 @@ describe('UsersPage', () => {
     expect(screen.getByRole('checkbox', { name: 'Select staff@tms.local' })).not.toBeChecked();
     expect(await screen.findByRole('button', { name: 'Email selected (1)' })).toBeEnabled();
     expect(screen.getByRole('checkbox', { name: 'Select driver@tms.local' })).toBeChecked();
+
+    // The draft survives a partial failure, so the retry needs no retyping.
+    await user.click(screen.getByRole('button', { name: 'Email selected (1)' }));
+
+    expect(await screen.findByRole('textbox', { name: /subject/i })).toHaveValue('s');
+    expect(screen.getByRole('textbox', { name: /message/i })).toHaveValue('b');
+  });
+
+  it('drops vanished users from the selection and keeps the draft', async () => {
+    post.mockRejectedValue(
+      Object.assign(new Error('Request failed'), {
+        isAxiosError: true,
+        response: {
+          status: 400,
+          data: { message: 'One or more selected users no longer exist', unknownIds: ['u2'] },
+        },
+      }),
+    );
+    const user = userEvent.setup();
+    renderPage(<UsersPage />);
+    await screen.findByText('staff@tms.local');
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select staff@tms.local' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select driver@tms.local' }));
+    await user.click(screen.getByRole('button', { name: 'Email selected (2)' }));
+    await user.type(screen.getByRole('textbox', { name: /subject/i }), 's');
+    await user.type(screen.getByRole('textbox', { name: /message/i }), 'b');
+    await user.click(screen.getByRole('button', { name: 'Send email' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '1 selected user no longer exists and was removed from your selection — try again.',
+    );
+    // The dialog title tracks the live selection, so the vanished user left the count.
+    expect(screen.getByText('Email 1 selected user')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: /subject/i })).toHaveValue('s');
+    expect(screen.getByRole('textbox', { name: /message/i })).toHaveValue('b');
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(await screen.findByRole('button', { name: 'Email selected (1)' })).toBeEnabled();
+    expect(screen.getByRole('checkbox', { name: 'Select driver@tms.local' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Select staff@tms.local' })).toBeChecked();
   });
 
   it('selects every user on the page at once', async () => {

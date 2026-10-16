@@ -9,6 +9,7 @@ import {
   Stack,
   TextField,
 } from '@mui/material';
+import axios from 'axios';
 
 import { messageFor } from '../auth';
 import { useSendMassEmail } from '../users';
@@ -19,9 +20,29 @@ interface MassEmailDialogProps {
   open: boolean;
   onClose: () => void;
   onSent: (result: MassEmailResult) => void;
+  onUnknownUsers: (unknownIds: string[]) => void;
 }
 
-export function MassEmailDialog({ userIds, open, onClose, onSent }: MassEmailDialogProps) {
+/** Ids the server rejected because those users no longer exist; empty for any other error. */
+function unknownIdsIn(cause: unknown): string[] {
+  if (axios.isAxiosError(cause) && cause.response?.status === 400) {
+    const { unknownIds } = (cause.response.data ?? {}) as { unknownIds?: unknown };
+
+    if (Array.isArray(unknownIds) && unknownIds.every((id) => typeof id === 'string')) {
+      return unknownIds;
+    }
+  }
+
+  return [];
+}
+
+export function MassEmailDialog({
+  userIds,
+  open,
+  onClose,
+  onSent,
+  onUnknownUsers,
+}: MassEmailDialogProps) {
   const sendMassEmail = useSendMassEmail();
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
@@ -33,11 +54,26 @@ export function MassEmailDialog({ userIds, open, onClose, onSent }: MassEmailDia
 
     try {
       const result = await sendMassEmail.mutateAsync({ userIds, subject, body });
-      setSubject('');
-      setBody('');
+
+      // On a partial failure the draft stays, so retrying the misses needs no retyping.
+      if (result.failed.length === 0) {
+        setSubject('');
+        setBody('');
+      }
       onSent(result);
     } catch (cause) {
-      setError(messageFor(cause, 'Could not send the email'));
+      const unknownIds = unknownIdsIn(cause);
+
+      if (unknownIds.length > 0) {
+        onUnknownUsers(unknownIds);
+        setError(
+          `${unknownIds.length} selected ${
+            unknownIds.length === 1 ? 'user no longer exists and was' : 'users no longer exist and were'
+          } removed from your selection — try again.`,
+        );
+      } else {
+        setError(messageFor(cause, 'Could not send the email'));
+      }
     }
   };
 

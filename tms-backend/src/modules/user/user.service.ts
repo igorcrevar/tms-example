@@ -165,7 +165,12 @@ export class UserService {
     const recipients = await this.users.find({ where: { id: In(ids) } });
 
     if (recipients.length !== ids.length) {
-      throw new BadRequestException('One or more selected users no longer exist');
+      // The missing ids let the client drop stale rows from its selection.
+      const found = new Set(recipients.map((recipient) => recipient.id));
+      throw new BadRequestException({
+        message: 'One or more selected users no longer exist',
+        unknownIds: ids.filter((id) => !found.has(id)),
+      });
     }
 
     this.logger.log(`Sending a mass email to ${ids.length} users on behalf of ${callerId}`);
