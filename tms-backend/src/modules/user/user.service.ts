@@ -11,6 +11,8 @@ import { DataSource, In, Repository } from 'typeorm';
 import { Driver } from '../driver/entities/driver.entity';
 import { TokenAudience } from '../auth/entities/refresh-token.entity';
 import { TokenService } from '../auth/services/token.service';
+import { MailService } from '../mail/mail.service';
+import { adminNoticeEmail } from '../mail/templates';
 import { ListUsersQueryDto } from './dto';
 import { User, UserStatus } from './entities/user.entity';
 import { UserSummary, toUserSummary } from './user.mapper';
@@ -22,6 +24,11 @@ export interface PagedUsers {
   limit: number;
 }
 
+export interface MassEmailResult {
+  sent: number;
+  failed: Array<{ userId: string }>;
+}
+
 @Injectable()
 export class UserService {
   private readonly logger = new Logger(UserService.name);
@@ -31,6 +38,7 @@ export class UserService {
     @InjectRepository(Driver) private readonly drivers: Repository<Driver>,
     private readonly tokens: TokenService,
     private readonly dataSource: DataSource,
+    private readonly mail: MailService,
   ) {}
 
   /** Excludes the caller: the list is of *other* users. Soft-deleted rows never appear. */
@@ -145,6 +153,46 @@ export class UserService {
       // Existing sessions were built on the old factor, so they go with it.
       await this.tokens.revokeAllForUser(userId, TokenAudience.Staff, manager);
     });
+  }
+
+  /** Best effort: one unreachable mailbox must not stop the rest of the batch. */
+  async sendMassEmail(
+    input: { userIds: string[]; subject: string; body: string },
+    callerId: string,
+  ): Promise<MassEmailResult> {
+    const ids = [...new Set(input.userIds.map((id) => id.toLowerCase()))];
+    const recipients = await this.users.find({ where: { id: In(ids) } });
+
+    if (recipients.length !== ids.length) {
+      throw new BadRequestException('One or more selected users no longer exist');
+    }
+
+    this.logger.log(`Sending a mass email to ${ids.length} users on behalf of ${callerId}`);
+
+    const failed: Array<{ userId: string }> = [];
+
+    for (const recipient of recipients) {
+      const message = adminNoticeEmail({
+        firstName: recipient.firstName,
+        subject: input.subject,
+        body: input.body,
+      });
+
+      try {
+        await this.mail.send({ to: recipient.email, ...message });
+      } catch (error) {
+        // The id and SMTP code are enough to follow up; the address never reaches a log.
+        const code = error instanceof Error && 'code' in error ? String(error.code) : 'unknown';
+        this.logger.warn(`Mass email to user ${recipient.id} failed (${code})`);
+        failed.push({ userId: recipient.id });
+      }
+    }
+
+    this.logger.log(
+      `Mass email by ${callerId}: ${recipients.length - failed.length} sent, ${failed.length} failed`,
+    );
+
+    return { sent: recipients.length - failed.length, failed };
   }
 
   findLiveById(userId: string): Promise<User | null> {

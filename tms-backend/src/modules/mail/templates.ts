@@ -58,3 +58,21 @@ export function passwordResetEmail(params: {
     ].join('\n'),
   };
 }
+
+/** An admin-composed notice: the body is plain text and is escaped into the HTML part. */
+export function adminNoticeEmail(params: { firstName: string; subject: string; body: string }): {
+  subject: string;
+  text: string;
+  html: string;
+} {
+  return {
+    subject: params.subject,
+    text: [`Hello ${params.firstName},`, '', params.body].join('\n'),
+    html: [
+      `<p>Hello ${escapeHtml(params.firstName)},</p>`,
+      ...params.body
+        .split(/\n{2,}/)
+        .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, '<br>')}</p>`),
+    ].join('\n'),
+  };
+}

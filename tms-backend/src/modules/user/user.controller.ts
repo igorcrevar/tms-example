@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
@@ -6,11 +7,13 @@ import {
   HttpStatus,
   Param,
   ParseUUIDPipe,
+  Post,
   Query,
   UseGuards,
   Logger,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { CsrfGuard } from '../auth/guards/csrf.guard';
@@ -18,9 +21,12 @@ import { StaffJwtGuard } from '../auth/guards/staff-jwt.guard';
 import { PermissionsGuard } from '../auth/permissions/permissions.guard';
 import { RequirePermission } from '../auth/permissions/require-permission.decorator';
 import type { StaffPrincipal } from '../auth/strategies/staff-jwt.strategy';
-import { ListUsersQueryDto } from './dto';
+import { ListUsersQueryDto, MassEmailDto } from './dto';
 import { PermissionAction, PermissionSubject } from './entities/permission.entity';
-import { PagedUsers, UserService } from './user.service';
+import { MassEmailResult, PagedUsers, UserService } from './user.service';
+
+// Each request can fan out to 100 emails, so volume is worth limiting.
+const MASS_EMAIL_THROTTLE = { default: { limit: 5, ttl: 60_000 } };
 
 @ApiTags('users')
 @Controller('staff/users')
@@ -37,6 +43,17 @@ export class UserController {
     @CurrentUser() principal: StaffPrincipal,
   ): Promise<PagedUsers> {
     return this.users.list(query, principal.userId);
+  }
+
+  @Post('mass-email')
+  @HttpCode(HttpStatus.OK)
+  @Throttle(MASS_EMAIL_THROTTLE)
+  @RequirePermission(PermissionAction.Update, PermissionSubject.User)
+  massEmail(
+    @Body() dto: MassEmailDto,
+    @CurrentUser() principal: StaffPrincipal,
+  ): Promise<MassEmailResult> {
+    return this.users.sendMassEmail(dto, principal.userId);
   }
 
   @Delete(':id/two-factor')
