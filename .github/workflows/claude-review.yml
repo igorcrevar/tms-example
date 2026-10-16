@@ -2,6 +2,10 @@ name: Claude Review
 
 on:
   workflow_call:
+    inputs:
+      pr_number:
+        required: true
+        type: string
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN:
         required: true
@@ -10,14 +14,6 @@ permissions: {}
 
 jobs:
   review:
-    # Only same-repo, non-draft PRs: fork PRs get no secrets, and a skipped
-    # job still satisfies the required check. The condition sits here, not on
-    # the caller: a skipped `uses:` job never reports this check, which would
-    # leave it pending and block the merge.
-    if: >-
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -39,7 +35,7 @@ jobs:
           track_progress: true
           prompt: |
             REPO: ${{ github.repository }}
-            PR NUMBER: ${{ github.event.pull_request.number }}
+            PR NUMBER: ${{ inputs.pr_number }}
 
             Perform a code review with the following focus areas:
 
@@ -90,7 +86,7 @@ jobs:
               exit 0
               ;;
             REQUEST_CHANGES)
-              echo "::error::Claude review requested changes. Findings are posted on the PR (https://github.com/${{ github.repository }}/pull/${{ github.event.pull_request.number }}) and in the step summary above."
+              echo "::error::Claude review requested changes. Findings are posted on the PR (https://github.com/${{ github.repository }}/pull/${{ inputs.pr_number }}) and in the step summary above."
               exit 1
               ;;
             *)
