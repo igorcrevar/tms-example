@@ -51,19 +51,50 @@ jobs:
             Provide detailed feedback using inline comments for specific issues.
             Use top-level comments for general observations.
 
+            For every finding that has a mechanical fix, include in the inline
+            comment a GitHub ```suggestion fenced block containing the exact
+            replacement lines, so the reviewer can apply it with the "Commit
+            suggestion" button. Findings without a mechanical fix keep plain
+            inline comments.
+
+            Also write a file claude-review-summary.md in the repository root:
+            a short markdown report with the verdict line first, then a table
+            with the columns Severity | File:line | Finding | Has suggestion?,
+            then this single line:
+            Reply `@claude fix <finding>` on the PR to have Claude implement a fix.
+
             Finally, write your verdict to the file claude-review-verdict in the
             repository root: the single word REQUEST_CHANGES if you found any
             blocking issue (a bug, a security problem, or a broken repo invariant),
             otherwise the single word APPROVE.
 
           claude_args: |
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Write(claude-review-verdict)"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Write(claude-review-verdict),Write(claude-review-summary.md)"
+
+      - name: Publish review summary
+        if: always()
+        run: |
+          if [ -f claude-review-summary.md ]; then
+            cat claude-review-summary.md >>"$GITHUB_STEP_SUMMARY"
+          else
+            echo "No review summary was produced (the review step likely crashed before running)." >>"$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Enforce review verdict
+        if: always()
         run: |
           verdict=$(cat claude-review-verdict 2>/dev/null || echo "MISSING")
           echo "Review verdict: $verdict"
-          if [ "$verdict" != "APPROVE" ]; then
-            echo "::error::Claude review did not approve this PR (verdict: $verdict)"
-            exit 1
-          fi
+          case "$verdict" in
+            APPROVE)
+              exit 0
+              ;;
+            REQUEST_CHANGES)
+              echo "::error::Claude review requested changes. Findings are posted on the PR (https://github.com/${{ github.repository }}/pull/${{ github.event.pull_request.number }}) and in the step summary above."
+              exit 1
+              ;;
+            *)
+              echo "::error::The review step itself failed before producing a verdict. The most common cause of an immediate (after 0s) failure is a missing or expired CLAUDE_CODE_OAUTH_TOKEN repo secret — regenerate it with 'claude setup-token'."
+              exit 1
+              ;;
+          esac
