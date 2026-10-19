@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -234,5 +234,190 @@ describe('UsersPage', () => {
     renderPage(<UsersPage />);
 
     expect(await screen.findByText(/no users match this filter/i)).toBeInTheDocument();
+  });
+
+  it('emails the selected users and clears the selection', async () => {
+    post.mockResolvedValue({ data: { sent: 2, failed: [] } });
+    const user = userEvent.setup();
+    renderPage(<UsersPage />);
+    await screen.findByText('staff@tms.local');
+
+    expect(screen.getByRole('button', { name: 'Email selected (0)' })).toBeDisabled();
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select staff@tms.local' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select driver@tms.local' }));
+    await user.click(screen.getByRole('button', { name: 'Email selected (2)' }));
+
+    await user.type(screen.getByRole('textbox', { name: /subject/i }), 'Maintenance');
+    await user.type(screen.getByRole('textbox', { name: /message/i }), 'Down at noon.');
+    await user.click(screen.getByRole('button', { name: 'Send email' }));
+
+    expect(post).toHaveBeenCalledWith('/users/mass-email', {
+      userIds: ['u1', 'u2'],
+      subject: 'Maintenance',
+      body: 'Down at noon.',
+    });
+    expect(await screen.findByText('Email sent to 2 users')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Email selected (0)' })).toBeDisabled();
+
+    // A full success clears the draft, so the next email starts blank.
+    await user.click(screen.getByRole('checkbox', { name: 'Select staff@tms.local' }));
+    await user.click(screen.getByRole('button', { name: 'Email selected (1)' }));
+
+    expect(await screen.findByRole('textbox', { name: /subject/i })).toHaveValue('');
+    expect(screen.getByRole('textbox', { name: /message/i })).toHaveValue('');
+  });
+
+  it('keeps the failed recipients selected and reports them', async () => {
+    post.mockResolvedValue({ data: { sent: 1, failed: [{ userId: 'u2' }] } });
+    const user = userEvent.setup();
+    renderPage(<UsersPage />);
+    await screen.findByText('staff@tms.local');
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select staff@tms.local' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select driver@tms.local' }));
+    await user.click(screen.getByRole('button', { name: 'Email selected (2)' }));
+    await user.type(screen.getByRole('textbox', { name: /subject/i }), 's');
+    await user.type(screen.getByRole('textbox', { name: /message/i }), 'b');
+    await user.click(screen.getByRole('button', { name: 'Send email' }));
+
+    expect(
+      within(await screen.findByRole('alert')).getByText(
+        'The email reached 1 of 2 users; 1 failed. Those users are still selected.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Email sent to/)).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Select staff@tms.local' })).not.toBeChecked();
+    expect(await screen.findByRole('button', { name: 'Email selected (1)' })).toBeEnabled();
+    expect(screen.getByRole('checkbox', { name: 'Select driver@tms.local' })).toBeChecked();
+
+    // The draft survives a partial failure, so the retry needs no retyping.
+    await user.click(screen.getByRole('button', { name: 'Email selected (1)' }));
+
+    expect(await screen.findByRole('textbox', { name: /subject/i })).toHaveValue('s');
+    expect(screen.getByRole('textbox', { name: /message/i })).toHaveValue('b');
+  });
+
+  it('drops vanished users from the selection and keeps the draft', async () => {
+    post.mockRejectedValue(
+      Object.assign(new Error('Request failed'), {
+        isAxiosError: true,
+        response: {
+          status: 400,
+          data: { message: 'One or more selected users no longer exist', unknownIds: ['u2'] },
+        },
+      }),
+    );
+    const user = userEvent.setup();
+    renderPage(<UsersPage />);
+    await screen.findByText('staff@tms.local');
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select staff@tms.local' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select driver@tms.local' }));
+    await user.click(screen.getByRole('button', { name: 'Email selected (2)' }));
+    await user.type(screen.getByRole('textbox', { name: /subject/i }), 's');
+    await user.type(screen.getByRole('textbox', { name: /message/i }), 'b');
+    await user.click(screen.getByRole('button', { name: 'Send email' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '1 selected user no longer exists and was removed from your selection — try again.',
+    );
+    // The dialog title tracks the live selection, so the vanished user left the count.
+    expect(screen.getByText('Email 1 selected user')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: /subject/i })).toHaveValue('s');
+    expect(screen.getByRole('textbox', { name: /message/i })).toHaveValue('b');
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(await screen.findByRole('button', { name: 'Email selected (1)' })).toBeEnabled();
+    expect(screen.getByRole('checkbox', { name: 'Select driver@tms.local' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Select staff@tms.local' })).toBeChecked();
+  });
+
+  it('closes the dialog and reports on the page when every selected user vanished', async () => {
+    post.mockRejectedValue(
+      Object.assign(new Error('Request failed'), {
+        isAxiosError: true,
+        response: {
+          status: 400,
+          data: {
+            message: 'One or more selected users no longer exist',
+            unknownIds: ['u1', 'u2'],
+          },
+        },
+      }),
+    );
+    const user = userEvent.setup();
+    renderPage(<UsersPage />);
+    await screen.findByText('staff@tms.local');
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select staff@tms.local' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select driver@tms.local' }));
+    await user.click(screen.getByRole('button', { name: 'Email selected (2)' }));
+    await user.type(screen.getByRole('textbox', { name: /subject/i }), 's');
+    await user.type(screen.getByRole('textbox', { name: /message/i }), 'b');
+    await user.click(screen.getByRole('button', { name: 'Send email' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(
+      '2 selected users no longer exist and were removed from your selection.',
+    );
+    expect(alert).not.toHaveTextContent('try again');
+    await waitFor(() =>
+      expect(screen.queryByText(/Email \d+ selected user/)).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole('button', { name: 'Email selected (0)' })).toBeDisabled();
+  });
+
+  it('selects every user on the page at once', async () => {
+    const user = userEvent.setup();
+    renderPage(<UsersPage />);
+    await screen.findByText('staff@tms.local');
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select all on this page' }));
+
+    expect(screen.getByRole('button', { name: 'Email selected (3)' })).toBeEnabled();
+  });
+
+  it('disables sending above 100 selected users', async () => {
+    const many = Array.from({ length: 101 }, (_, i) => ({
+      ...staffUser,
+      id: `u${i}`,
+      email: `u${i}@tms.local`,
+    }));
+    get.mockResolvedValue({ data: { items: many, total: 101 } });
+    const user = userEvent.setup();
+    renderPage(<UsersPage />);
+    await screen.findByText('u0@tms.local');
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select all on this page' }));
+
+    expect(screen.getByRole('button', { name: 'Email selected (101, max 100)' })).toBeDisabled();
+  }, 20000);
+
+  it('keeps the selection across pages', async () => {
+    get.mockResolvedValue({ data: { items: [staffUser, driverUser], total: 60 } });
+    const user = userEvent.setup();
+    renderPage(<UsersPage />);
+    await screen.findByText('staff@tms.local');
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select staff@tms.local' }));
+    await user.click(screen.getByRole('button', { name: /next page/i }));
+
+    expect(await screen.findByRole('button', { name: 'Email selected (1)' })).toBeEnabled();
+  });
+
+  it('drops a deleted user from the selection', async () => {
+    del.mockResolvedValue({ data: {} });
+    const user = userEvent.setup();
+    renderPage(<UsersPage />);
+    await screen.findByText('staff@tms.local');
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select staff@tms.local' }));
+    const row = screen.getByText('staff@tms.local').closest('tr')!;
+    await user.click(within(row).getByRole('button', { name: 'Delete' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' }));
+
+    expect(await screen.findByRole('button', { name: 'Email selected (0)' })).toBeDisabled();
   });
 });

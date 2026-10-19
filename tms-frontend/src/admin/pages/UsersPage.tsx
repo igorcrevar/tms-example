@@ -1,7 +1,9 @@
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
@@ -23,6 +25,7 @@ import {
 import { messageFor } from '../auth';
 import { AddDriverDialog } from '../components/AddDriverDialog';
 import { InviteUserDialog } from '../components/InviteUserDialog';
+import { MassEmailDialog } from '../components/MassEmailDialog';
 import { SetPinDialog } from '../components/SetPinDialog';
 import type { SetPinTarget } from '../components/SetPinDialog';
 import {
@@ -32,13 +35,15 @@ import {
   useResetTwoFactor,
   useUsers,
 } from '../users';
-import type { UserSummary } from '../users';
+import type { MassEmailResult, UserSummary } from '../users';
 
 const STATUS_COLOUR = {
   ACTIVE: 'success',
   INVITED: 'warning',
   SUSPENDED: 'default',
 } as const;
+
+const MAX_RECIPIENTS = 100;
 
 export function UsersPage() {
   const [filter, setFilter] = useState('all');
@@ -51,11 +56,70 @@ export function UsersPage() {
   const [twoFactorTarget, setTwoFactorTarget] = useState<UserSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [massEmailOpen, setMassEmailOpen] = useState(false);
 
+  const queryClient = useQueryClient();
   const users = useUsers({ ...(filter === 'all' ? {} : { role: filter }), page, limit });
   const removeUser = useDeleteUser();
   const resetTwoFactor = useResetTwoFactor();
   const resendInvitation = useResendInvitation();
+
+  const pageIds = users.data?.items.map((user) => user.id) ?? [];
+  const allOnPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.includes(id));
+
+  const toggleOne = (id: string) =>
+    setSelected((current) =>
+      current.includes(id) ? current.filter((other) => other !== id) : [...current, id],
+    );
+
+  const togglePage = () =>
+    setSelected((current) =>
+      allOnPageSelected
+        ? current.filter((id) => !pageIds.includes(id))
+        : [...new Set([...current, ...pageIds])],
+    );
+
+  const onMassEmailSent = (result: MassEmailResult) => {
+    setMassEmailOpen(false);
+    setError(null);
+    setNotice(null);
+
+    const total = result.sent + result.failed.length;
+
+    if (result.failed.length > 0) {
+      // Keep the misses selected so the admin can see and retry exactly them.
+      setSelected(result.failed.map((failure) => failure.userId));
+      setError(
+        `The email reached ${result.sent} of ${total} ${total === 1 ? 'user' : 'users'}; ` +
+          `${result.failed.length} failed. Those users are still selected.`,
+      );
+    } else {
+      setSelected([]);
+      setNotice(`Email sent to ${result.sent} ${result.sent === 1 ? 'user' : 'users'}`);
+    }
+  };
+
+  // The server named ids that no longer exist: drop them and refresh the stale rows away.
+  const onUnknownUsers = (unknownIds: string[]): boolean => {
+    const remaining = selected.filter((id) => !unknownIds.includes(id));
+
+    setSelected(remaining);
+    void queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+
+    // Nothing left to retry, so close the dialog and explain here instead.
+    if (remaining.length === 0) {
+      setMassEmailOpen(false);
+      setNotice(null);
+      setError(
+        `${unknownIds.length} selected ${
+          unknownIds.length === 1 ? 'user no longer exists and was' : 'users no longer exist and were'
+        } removed from your selection.`,
+      );
+    }
+
+    return remaining.length > 0;
+  };
 
   // A refused delete (403, or 400 for your own account) must say so rather than
   // leaving a dead button and an unhandled rejection.
@@ -68,6 +132,7 @@ export function UsersPage() {
 
     try {
       await removeUser.mutateAsync(deleteTarget.id);
+      setSelected((current) => current.filter((id) => id !== deleteTarget.id));
       setDeleteTarget(null);
     } catch (cause) {
       setDeleteTarget(null);
@@ -110,6 +175,14 @@ export function UsersPage() {
         <Typography variant="h4" component="h2" sx={{ flexGrow: 1 }}>
           Users
         </Typography>
+        <Button
+          variant="outlined"
+          disabled={selected.length === 0 || selected.length > MAX_RECIPIENTS}
+          onClick={() => setMassEmailOpen(true)}
+        >
+          Email selected ({selected.length}
+          {selected.length > MAX_RECIPIENTS ? `, max ${MAX_RECIPIENTS}` : ''})
+        </Button>
         <Button variant="outlined" onClick={() => setDriverOpen(true)}>
           Add driver
         </Button>
@@ -155,6 +228,14 @@ export function UsersPage() {
         <Table size="small">
           <TableHead>
             <TableRow>
+              <TableCell padding="checkbox">
+                <Checkbox
+                  checked={allOnPageSelected}
+                  indeterminate={!allOnPageSelected && pageIds.some((id) => selected.includes(id))}
+                  onChange={togglePage}
+                  slotProps={{ input: { 'aria-label': 'Select all on this page' } }}
+                />
+              </TableCell>
               <TableCell>Name</TableCell>
               <TableCell>Email</TableCell>
               <TableCell>Role</TableCell>
@@ -165,6 +246,13 @@ export function UsersPage() {
           <TableBody>
             {users.data.items.map((user) => (
               <TableRow key={user.id}>
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    checked={selected.includes(user.id)}
+                    onChange={() => toggleOne(user.id)}
+                    slotProps={{ input: { 'aria-label': `Select ${user.email}` } }}
+                  />
+                </TableCell>
                 <TableCell>
                   {user.firstName} {user.lastName}
                   {user.driver && ` (${user.driver.driverCode})`}
@@ -219,7 +307,7 @@ export function UsersPage() {
             ))}
             {users.data.items.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5}>No users match this filter.</TableCell>
+                <TableCell colSpan={6}>No users match this filter.</TableCell>
               </TableRow>
             )}
           </TableBody>
@@ -243,6 +331,13 @@ export function UsersPage() {
       <InviteUserDialog open={inviteOpen} onClose={() => setInviteOpen(false)} />
       <AddDriverDialog open={driverOpen} onClose={() => setDriverOpen(false)} />
       <SetPinDialog driver={pinTarget} onClose={() => setPinTarget(null)} />
+      <MassEmailDialog
+        userIds={selected}
+        open={massEmailOpen}
+        onClose={() => setMassEmailOpen(false)}
+        onSent={onMassEmailSent}
+        onUnknownUsers={onUnknownUsers}
+      />
 
       <Dialog open={twoFactorTarget !== null} onClose={() => setTwoFactorTarget(null)}>
         <DialogTitle>Reset two-factor for {twoFactorTarget?.email}?</DialogTitle>
